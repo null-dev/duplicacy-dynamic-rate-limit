@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "net/http/pprof"
 
@@ -24,6 +25,8 @@ import (
 
 	"io/ioutil"
 
+	"github.com/boz/go-throttle"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gilbertchen/duplicacy/src"
 )
 
@@ -32,7 +35,7 @@ const (
 )
 
 var ScriptEnabled bool
-var GitCommit = "unofficial"
+var GitCommit = "unofficial" + duplicacy.COMPILATION_SANITY_CHECK
 
 func getRepositoryPreference(context *cli.Context, storageName string) (repository string,
 	preference *duplicacy.Preference) {
@@ -744,6 +747,15 @@ func backupRepository(context *cli.Context) {
 		return
 	}
 
+	// >>> DYNRATE
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		duplicacy.LOG_ERROR("RATE_FILE_WATCHER", "Failed to init rate-limit file watcher: %v", err)
+		return
+	}
+	defer func(watcher *fsnotify.Watcher) { _ = watcher.Close() }(watcher)
+	// <<< DYNRATE
+
 	runScript(context, preference.Name, "pre")
 
 	threads := context.Int("threads")
@@ -756,6 +768,48 @@ func backupRepository(context *cli.Context) {
 	if storage == nil {
 		return
 	}
+
+	// >>> DYNRATE
+	ThrottleFile := "/home/nulldev/Documents/SystemDocumentation/duplicacy-throttle/cur"
+	updateThrottle := func() {
+		ttext, err := ioutil.ReadFile(ThrottleFile)
+		if err != nil {
+			return
+		}
+		atoi, err := strconv.Atoi(strings.TrimSpace(string(ttext)))
+		if err != nil || atoi < 0 {
+			return
+		}
+		storage.SetRateLimits(0, atoi)
+		duplicacy.LOG_INFO("RATE_LIMIT_UPDATED", "Throttle updated to: %d", atoi)
+	}
+	updateThrottleThrottled := throttle.ThrottleFunc(time.Second, true, updateThrottle)
+	defer updateThrottleThrottled.Stop()
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				duplicacy.LOG_INFO("RATE_LIMIT_EVENT", "Rate-limit file updated, new event: %v", event)
+				if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
+					go updateThrottleThrottled.Trigger()
+				}
+			case err, ok := <-watcher.Errors:
+				duplicacy.LOG_INFO("RATE_FILE_CHECK_ERROR", "Throttle checker error (fatal: %t): %v", !ok, err)
+				if !ok {
+					return
+				}
+			}
+		}
+	}()
+	err = watcher.Add(filepath.Dir(ThrottleFile))
+	if err != nil {
+		duplicacy.LOG_ERROR("RATE_FILE_WATCHER", "Failed to start rate-limit file watcher: %v", err)
+		return
+	}
+	// <<< DYNRATE
 
 	password := ""
 	if preference.Encrypted {
@@ -776,6 +830,9 @@ func backupRepository(context *cli.Context) {
 	uploadRateLimit := context.Int("limit-rate")
 	enumOnly := context.Bool("enum-only")
 	storage.SetRateLimits(0, uploadRateLimit)
+	// >>> DYNRATE
+	updateThrottle()
+	// <<< DYNRATE
 	backupManager := duplicacy.CreateBackupManager(preference.SnapshotID, storage, repository, password, preference.NobackupFile, preference.FiltersFile, preference.ExcludeByAttribute)
 	duplicacy.SavePassword(*preference, "password", password)
 
@@ -1014,7 +1071,6 @@ func printFile(context *cli.Context) {
 	if context.String("id") != "" {
 		snapshotID = context.String("id")
 	}
-
 
 	backupManager := duplicacy.CreateBackupManager(preference.SnapshotID, storage, repository, password, "", "", false)
 	duplicacy.SavePassword(*preference, "password", password)
@@ -1262,7 +1318,7 @@ func copySnapshots(context *cli.Context) {
 	destinationStorage.SetRateLimits(0, context.Int("upload-limit-rate"))
 
 	destinationManager := duplicacy.CreateBackupManager(destination.SnapshotID, destinationStorage, repository,
-		                                                  destinationPassword, "", "", false)
+		destinationPassword, "", "", false)
 	duplicacy.SavePassword(*destination, "password", destinationPassword)
 	destinationManager.SetupSnapshotCache(destination.Name)
 
@@ -1387,7 +1443,7 @@ func benchmark(context *cli.Context) {
 	if storage == nil {
 		return
 	}
-	duplicacy.Benchmark(repository, storage, int64(fileSize) * 1024 * 1024, chunkSize * 1024 * 1024, chunkCount, uploadThreads, downloadThreads)
+	duplicacy.Benchmark(repository, storage, int64(fileSize)*1024*1024, chunkSize*1024*1024, chunkCount, uploadThreads, downloadThreads)
 }
 
 func main() {
@@ -1565,7 +1621,7 @@ func main() {
 				cli.BoolFlag{
 					Name:  "persist",
 					Usage: "continue processing despite chunk errors or existing files (without -overwrite), reporting any affected files",
-        },
+				},
 				cli.StringFlag{
 					Name:     "key-passphrase",
 					Usage:    "the passphrase to decrypt the RSA private key",
@@ -2176,8 +2232,8 @@ func main() {
 			Usage: "add a comment to identify the process",
 		},
 		cli.StringSliceFlag{
-			Name:  "suppress, s",
-			Usage: "suppress logs with the specified id",
+			Name:     "suppress, s",
+			Usage:    "suppress logs with the specified id",
 			Argument: "<id>",
 		},
 	}

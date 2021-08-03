@@ -225,7 +225,7 @@ func (storage *S3Storage) UploadFile(threadIndex int, filePath string, content [
 			Bucket:      aws.String(storage.bucket),
 			Key:         aws.String(storage.storageDir + filePath),
 			ACL:         aws.String(s3.ObjectCannedACLPrivate),
-			Body:        CreateRateLimitedReader(content, storage.UploadRateLimit/storage.numberOfThreads),
+			Body:        CreateRateLimitedReader(content, storage.UploadRateLimit()/storage.numberOfThreads),
 			ContentType: aws.String("application/duplicacy"),
 		}
 

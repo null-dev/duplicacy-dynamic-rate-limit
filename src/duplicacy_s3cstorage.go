@@ -175,7 +175,7 @@ func (storage *S3CStorage) DownloadFile(threadIndex int, filePath string, chunk 
 func (storage *S3CStorage) UploadFile(threadIndex int, filePath string, content []byte) (err error) {
 
 	options := s3.Options{}
-	reader := CreateRateLimitedReader(content, storage.UploadRateLimit/len(storage.buckets))
+	reader := CreateRateLimitedReader(content, storage.UploadRateLimit()/len(storage.buckets))
 	return storage.buckets[threadIndex].PutReader(storage.storageDir+filePath, reader, int64(len(content)), "application/duplicacy", s3.Private, options)
 }
 

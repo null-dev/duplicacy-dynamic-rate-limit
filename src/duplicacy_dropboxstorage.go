@@ -218,7 +218,7 @@ func (storage *DropboxStorage) UploadFile(threadIndex int, filePath string, cont
 		Mode:       dropbox.WriteModeOverwrite,
 		AutoRename: false,
 		Mute:       true,
-		Reader:     CreateRateLimitedReader(content, storage.UploadRateLimit/len(storage.clients)),
+		Reader:     CreateRateLimitedReader(content, storage.UploadRateLimit()/len(storage.clients)),
 	}
 
 	_, err = storage.clients[threadIndex].Upload(input)

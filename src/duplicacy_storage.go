@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -74,7 +75,9 @@ type Storage interface {
 // StorageBase is the base struct from which all storages are derived from
 type StorageBase struct {
 	DownloadRateLimit int // Maximum download rate (bytes/seconds)
-	UploadRateLimit   int // Maximum upload reate (bytes/seconds)
+	// <<< DYNRATE
+	_UploadRateLimit int32 // Maximum upload reate (bytes/seconds)
+	// >>> DYNRATE
 
 	DerivedStorage Storage // Used as the pointer to the derived storage class
 
@@ -85,8 +88,17 @@ type StorageBase struct {
 // SetRateLimits sets the maximum download and upload rates
 func (storage *StorageBase) SetRateLimits(downloadRateLimit int, uploadRateLimit int) {
 	storage.DownloadRateLimit = downloadRateLimit
-	storage.UploadRateLimit = uploadRateLimit
+	// <<< DYNRATE
+	atomic.StoreInt32(&storage._UploadRateLimit, int32(uploadRateLimit))
+	// >>> DYNRATE
 }
+
+// >>> DYNRATE
+func (storage *StorageBase) UploadRateLimit() int {
+	return int(atomic.LoadInt32(&storage._UploadRateLimit))
+}
+
+// <<< DYNRATE
 
 // SetDefaultNestingLevels sets the default read and write levels.  This is usually called by
 // derived storages to set the levels with old values so that storages initialized by earlier versions
@@ -627,7 +639,7 @@ func CreateStorage(preference Preference, resetPassword bool, threads int) (stor
 		// Handle writing directly to the root of the drive
 		// For gcd://driveid@/, driveid@ is match[3] not match[2]
 		if matched[2] == "" && strings.HasSuffix(matched[3], "@") {
-			matched[2], matched[3]  = matched[3], matched[2]
+			matched[2], matched[3] = matched[3], matched[2]
 		}
 		driveID := matched[2]
 		if driveID != "" {
@@ -646,13 +658,13 @@ func CreateStorage(preference Preference, resetPassword bool, threads int) (stor
 	} else if matched[1] == "one" || matched[1] == "odb" {
 		storagePath := matched[3] + matched[4]
 		prompt := fmt.Sprintf("Enter the path of the OneDrive token file (downloadable from https://duplicacy.com/one_start):")
-		tokenFile := GetPassword(preference, matched[1] + "_token", prompt, true, resetPassword)
+		tokenFile := GetPassword(preference, matched[1]+"_token", prompt, true, resetPassword)
 		oneDriveStorage, err := CreateOneDriveStorage(tokenFile, matched[1] == "odb", storagePath, threads)
 		if err != nil {
 			LOG_ERROR("STORAGE_CREATE", "Failed to load the OneDrive storage at %s: %v", storageURL, err)
 			return nil
 		}
-		SavePassword(preference, matched[1] + "_token", tokenFile)
+		SavePassword(preference, matched[1]+"_token", tokenFile)
 		return oneDriveStorage
 	} else if matched[1] == "hubic" {
 		storagePath := matched[3] + matched[4]

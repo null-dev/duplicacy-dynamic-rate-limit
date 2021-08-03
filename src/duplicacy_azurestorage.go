@@ -170,7 +170,7 @@ func (storage *AzureStorage) UploadFile(threadIndex int, filePath string, conten
 	tries := 0
 
 	for {
-		reader := CreateRateLimitedReader(content, storage.UploadRateLimit/len(storage.containers))
+		reader := CreateRateLimitedReader(content, storage.UploadRateLimit()/len(storage.containers))
 		blob := storage.containers[threadIndex].GetBlobReference(filePath)
 		err = blob.CreateBlockBlobFromReader(reader, nil)
 

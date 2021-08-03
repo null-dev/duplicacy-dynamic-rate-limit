@@ -422,7 +422,7 @@ func (storage *ACDStorage) UploadFile(threadIndex int, filePath string, content 
 		return fmt.Errorf("File path '%s' does not exist", parent)
 	}
 
-	fileID, err := storage.client.UploadFile(parentID, path.Base(filePath), content, storage.UploadRateLimit/storage.numberOfThreads)
+	fileID, err := storage.client.UploadFile(parentID, path.Base(filePath), content, storage.UploadRateLimit()/storage.numberOfThreads)
 	if err == nil {
 		storage.savePathID(filePath, fileID)
 		return nil

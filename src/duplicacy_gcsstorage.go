@@ -257,7 +257,7 @@ func (storage *GCSStorage) UploadFile(threadIndex int, filePath string, content 
 	for {
 		writeCloser := storage.bucket.Object(storage.storageDir + filePath).NewWriter(context.Background())
 		defer writeCloser.Close()
-		reader := CreateRateLimitedReader(content, storage.UploadRateLimit/storage.numberOfThreads)
+		reader := CreateRateLimitedReader(content, storage.UploadRateLimit()/storage.numberOfThreads)
 		_, err = io.Copy(writeCloser, reader)
 
 		if retry, e := storage.shouldRetry(&backoff, err); e == nil && !retry {

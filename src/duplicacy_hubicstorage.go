@@ -176,7 +176,7 @@ func (storage *HubicStorage) DownloadFile(threadIndex int, filePath string, chun
 
 // UploadFile writes 'content' to the file at 'filePath'.
 func (storage *HubicStorage) UploadFile(threadIndex int, filePath string, content []byte) (err error) {
-	return storage.client.UploadFile(storage.storageDir+"/"+filePath, content, storage.UploadRateLimit/storage.numberOfThreads)
+	return storage.client.UploadFile(storage.storageDir+"/"+filePath, content, storage.UploadRateLimit()/storage.numberOfThreads)
 }
 
 // If a local snapshot cache is needed for the storage to avoid downloading/uploading chunks too often when
